@@ -28,31 +28,25 @@ const users = {
     "919876543210": { name: "Friend's Name", role: "a very close friend of the admin and admin admires and cares for her a lot and they both met 4 years ago and from then life had been truely magical currently she is planning to study in italy and had applied in the university of teramo for bsc biotechnology " }
 };
 
-// --- 3. Database Setup (Supabase + Render safe version) ---
+// --- 3. Database Setup ---
+// const pgvector = require('pgvector/pg'); // ❌ remove this line
+
 const pool = new Pool({
   connectionString: DATABASE_URL,
   ssl: { rejectUnauthorized: false },
-  idleTimeoutMillis: 10000,        // close idle clients after 10s
-  connectionTimeoutMillis: 10000,  // give up after 10s if can't connect
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 10000
 });
 
-/**
- * Initialize database with retry logic (for Supabase cold start)
- */
 const initializeDatabase = async (retries = 5) => {
   for (let i = 1; i <= retries; i++) {
     try {
       console.log(`Attempt ${i} to initialize database...`);
 
-      // Register pgvector support
-      await pgvector.registerType(pool);
-      console.log("pgvector type registered.");
-
-      // Enable pgvector extension if not present
+      // Ensure pgvector extension exists (Supabase already has it)
       await pool.query("CREATE EXTENSION IF NOT EXISTS vector;");
       console.log("pgvector extension enabled.");
 
-      // Create table if missing
       await pool.query(`
         CREATE TABLE IF NOT EXISTS chat_history (
           id SERIAL PRIMARY KEY,
@@ -64,18 +58,15 @@ const initializeDatabase = async (retries = 5) => {
         );
       `);
       console.log("chat_history table initialized successfully.");
-      return; // ✅ success
+      return;
     } catch (err) {
       console.error(`Database init failed (attempt ${i}/${retries}): ${err.message}`);
-      if (i === retries) {
-        console.error("Database initialization failed after all retries. Exiting...");
-        process.exit(1);
-      }
-      // Wait before retrying
+      if (i === retries) process.exit(1);
       await new Promise(res => setTimeout(res, 5000));
     }
   }
 };
+
 
 
 // --- 4. RAG and AI Helper Functions ---
