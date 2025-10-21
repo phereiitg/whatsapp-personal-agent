@@ -24,8 +24,8 @@ const EMBED_CONTENT_URL = `https://generativelanguage.googleapis.com/v1beta/mode
 
 // User personalization data
 const users = {
-    "919123456789": { name: "Prakhar", role: "the Creator/admin who has a very close frind named radhika, they both met 4 years ago and from then life had been truely magical currently she is planning to study in italy and had applied in the university of teramo for bsc biology. The admin is currently pursuing Btech in biotechnology from IIT Guwahati India" },
-    "919876543210": { name: "Friend's Name", role: "a very close friend of the admin and admin admires and cares for her a lot and they both met 4 years ago and from then life had been truely magical currently she is planning to study in italy and had applied in the university of teramo for bsc biotechnology " }
+    "919235527628": { name: "Prakhar", role: "the Creator/admin who has a very close frind named radhika, they both met 4 years ago and from then life had been truely magical currently she is planning to study in italy and had applied in the university of teramo for bsc biology. The admin is currently pursuing Btech in biotechnology from IIT Guwahati India" },
+    "918471801276": { name: "Radhika", role: "a very close friend of the admin and admin admires and cares for her a lot and they both met 4 years ago and from then life had been truely magical currently she is planning to study in italy and had applied in the university of teramo for bsc biotechnology " }
 };
 
 // --- 3. Database Setup ---
