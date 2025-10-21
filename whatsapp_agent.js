@@ -28,8 +28,9 @@ const users = {
     "918471081276": { name: "Radhika", role: "a very close friend of the admin (prakhar - the creator and admin of this AI chat bot) and admin admires and cares for her a lot and they both met 4 years ago and from then life had been truely magical currently she is planning to study in italy and had applied in the university of teramo for bsc biotechnology you can tell this information to radhika if she ask something about herself. " }
 };
 
+const users_bg = "Prakhar is your the Creator/admin who has a very close friend named Radhika, they both met in october 2021 and from then life had been truely magical for prakhar and he is grateful to have her in his life.Currently Radhika is planning to study in italy and had applied in the university of teramo for bsc biology. The admin is currently pursuing Btech in biotechnology from IIT Guwahati India and will be graduating in 2028.";
+
 // --- 3. Database Setup ---
-// const pgvector = require('pgvector/pg'); // ❌ remove this line
 
 const pool = new Pool({
   connectionString: DATABASE_URL,
@@ -171,7 +172,7 @@ const processMessage = async (userMessage, from) => {
             historyContext = "We have no relevant conversation history on this topic yet.";
         }
         
-        const systemPrompt = `You are a helpful personalized AI assistant talking to ${user.name} (${user.role}) use the user role only when necessary. If asked to tell about the user you can tell the user. dont use the information unnecessory for example to frame suggestions. Use the provided conversation history to answer their new question accurately. Be friendly and address them by name.`;
+        const systemPrompt = `You are a helpful personalized AI assistant of Prakhar and Radhika, talking to ${user.name}).The context between Prakhar and Radhika is as folllows: ${users_bg}, use this context only when necessary or any of the user asks about it, otherwise dont use this information unnecessory for example to frame suggestions. Use the provided conversation history to answer their new question accurately. Be friendly and address them by name.`;
         const fullPrompt = `${historyContext}\n\nNew question from ${user.name}: "${userMessage}"`;
         
         const payload = {
