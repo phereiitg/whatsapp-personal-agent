@@ -171,7 +171,7 @@ const processMessage = async (userMessage, from) => {
             historyContext = "We have no relevant conversation history on this topic yet.";
         }
         
-        const systemPrompt = `You are a helpful personalized AI assistant talking to ${user.name} (${user.role}) use the user role only when necessary. Use the provided conversation history to answer their new question accurately. Be friendly and address them by name.`;
+        const systemPrompt = `You are a helpful personalized AI assistant talking to ${user.name} (${user.role}) use the user role only when necessary and dont use the information just provided when it is not asked even to frame suggestions or any questions. Use the provided conversation history to answer their new question accurately. Be friendly and address them by name.`;
         const fullPrompt = `${historyContext}\n\nNew question from ${user.name}: "${userMessage}"`;
         
         const payload = {
