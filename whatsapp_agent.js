@@ -24,8 +24,8 @@ const EMBED_CONTENT_URL = `https://generativelanguage.googleapis.com/v1beta/mode
 
 // User personalization data
 const users = {
-    "919123456789": { name: "Prakhar", role: "the Creator" },
-    "919876543210": { name: "Friend's Name", role: "a trusted friend" }
+    "919123456789": { name: "Prakhar", role: "the Creator/admin who has a very close frind named radhika, they both met 4 years ago and from then life had been truely magical currently she is planning to study in italy and had applied in the university of teramo for bsc biology. The admin is currently pursuing Btech in biotechnology from IIT Guwahati India" },
+    "919876543210": { name: "Friend's Name", role: "a very close friend of the admin and admin admires and cares for her a lot and they both met 4 years ago and from then life had been truely magical currently she is planning to study in italy and had applied in the university of teramo for bsc biotechnology " }
 };
 
 // --- 3. Database Setup ---
@@ -163,7 +163,7 @@ const processMessage = async (userMessage, from) => {
             historyContext = "We have no relevant conversation history on this topic yet.";
         }
         
-        const systemPrompt = `You are a helpful AI assistant talking to ${user.name} (${user.role}). Use the provided conversation history to answer their new question accurately. Be friendly and address them by name.`;
+        const systemPrompt = `You are a helpful personalized AI assistant talking to ${user.name} (${user.role}) use the user role only when necessary. Use the provided conversation history to answer their new question accurately. Be friendly and address them by name.`;
         const fullPrompt = `${historyContext}\n\nNew question from ${user.name}: "${userMessage}"`;
         
         const payload = {
