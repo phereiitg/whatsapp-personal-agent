@@ -1,186 +1,235 @@
-// WhatsApp AI Agent using Node.js, Express, and Gemini API
-//
-// This server listens for incoming WhatsApp messages via a webhook,
-// sends the message content to the Gemini AI for a response,
-// and then sends that response back to the user on WhatsApp.
+// WhatsApp AI Agent with RAG Memory using a Single File
+// Connects to a PostgreSQL database (like Supabase) to provide long-term, token-efficient memory.
 
-// Import required packages
+// --- 1. Import Dependencies ---
 const express = require('express');
 const axios = require('axios');
-require('dotenv').config(); // To manage environment variables
+const { Pool } = require('pg');
+const pgvector = require('pgvector/pg');
+require('dotenv').config();
 
-// --- Configuration ---
-// Load variables from the .env file or Replit Secrets
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+// --- 2. Configuration ---
+const {
+    WHATSAPP_TOKEN,
+    VERIFY_TOKEN,
+    GEMINI_API_KEY,
+    PHONE_NUMBER_ID,
+    DATABASE_URL, // Your Supabase connection URL
+} = process.env;
 
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
+// API URLs
 const WHATSAPP_API_URL = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
+const GENERATE_CONTENT_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
+const EMBED_CONTENT_URL = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`;
 
-// --- NEW: User Personalization Database ---
-// A simple object to map phone numbers to user data.
-// Replace these with the actual WhatsApp numbers (including country code, no + or spaces).
+// User personalization data
 const users = {
-    "919235527628": { name: "Prakhar", role: "the Creator/Admin" },
-    "918471081276": { name: "Radhika", role: "Girlfriend of the creator" }
-    // Add more users here
+    "919123456789": { name: "Prakhar", role: "the Creator" },
+    "919876543210": { name: "Friend's Name", role: "a trusted friend" }
+};
+
+// --- 3. Database Setup ---
+const pool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false // Required for Render/Supabase connections
+    }
+});
+
+const initializeDatabase = async () => {
+    try {
+        await pgvector.registerType(pool);
+        console.log('pgvector type registered with database pool.');
+        
+        await pool.query('CREATE EXTENSION IF NOT EXISTS vector');
+        console.log('pgvector extension is enabled.');
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS chat_history (
+                id SERIAL PRIMARY KEY,
+                user_phone TEXT NOT NULL,
+                user_message TEXT,
+                ai_message TEXT,
+                embedding VECTOR(768), -- Gemini's text-embedding-004 model size
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        console.log('chat_history table is successfully initialized.');
+    } catch (err) {
+        console.error('FATAL: Error initializing database. The app cannot continue.', err);
+        process.exit(1); // Exit if the database can't be set up
+    }
+};
+
+// --- 4. RAG and AI Helper Functions ---
+
+/**
+ * Generates a vector embedding for a given text.
+ * @param {string} text - The text to embed.
+ * @returns {Promise<number[]>} - The vector embedding.
+ */
+const getEmbedding = async (text) => {
+    try {
+        const response = await axios.post(EMBED_CONTENT_URL, {
+            model: "models/text-embedding-004",
+            content: { parts: [{ text }] }
+        });
+        return response.data.embedding.values;
+    } catch (error) {
+        console.error("Error generating embedding:", error.response ? error.response.data : error.message);
+        throw new Error("Failed to generate text embedding.");
+    }
+};
+
+/**
+ * Retrieves relevant conversation history from the database.
+ * @param {string} userMessage - The new message from the user.
+ * @param {string} from - The user's phone number.
+ * @returns {Promise<object[]>} - An array of past message objects.
+ */
+const getRelevantHistory = async (userMessage, from) => {
+    const embedding = await getEmbedding(userMessage);
+    const embeddingSql = pgvector.toSql(embedding);
+
+    const { rows } = await pool.query(
+        `SELECT user_message, ai_message FROM chat_history 
+         WHERE user_phone = $1 
+         ORDER BY embedding <-> $2 
+         LIMIT 3`, // Retrieve the top 3 most similar past messages
+        [from, embeddingSql]
+    );
+    console.log(`Found ${rows.length} relevant past messages.`);
+    return rows;
+};
+
+/**
+ * Saves a new user message and AI response to the database.
+ * @param {string} userMessage - The user's message.
+ * @param {string} aiMessage - The AI's response.
+ * @param {string} from - The user's phone number.
+ */
+const saveToHistory = async (userMessage, aiMessage, from) => {
+    const textToEmbed = `User said: ${userMessage}\nAI replied: ${aiMessage}`;
+    const embedding = await getEmbedding(textToEmbed);
+    const embeddingSql = pgvector.toSql(embedding);
+
+    await pool.query(
+        'INSERT INTO chat_history (user_phone, user_message, ai_message, embedding) VALUES ($1, $2, $3, $4)',
+        [from, userMessage, aiMessage, embeddingSql]
+    );
+    console.log(`Saved new exchange for user ${from} to history.`);
 };
 
 
-// Initialize Express app
+// --- 5. WhatsApp API Function ---
+
+/**
+ * Sends a text message via the WhatsApp Business API.
+ * @param {string} to - The recipient's phone number.
+ * @param {string} text - The message content.
+ */
+const sendWhatsAppMessage = async (to, text) => {
+    const payload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
+    const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
+    try {
+        await axios.post(WHATSAPP_API_URL, payload, { headers });
+        console.log(`Message sent successfully to ${to}!`);
+    } catch (error) {
+        console.error('Error sending WhatsApp message:', error.response ? error.response.data : error.message);
+    }
+};
+
+
+// --- 6. Main Message Processing Logic ---
+
+/**
+ * Orchestrates the entire RAG process for an incoming message.
+ * @param {string} userMessage - The message from the user.
+ * @param {string} from - The user's phone number.
+ */
+const processMessage = async (userMessage, from) => {
+    try {
+        // Step 1: Find relevant history from the database
+        const relevantHistory = await getRelevantHistory(userMessage, from);
+
+        // Step 2: Prepare a smart prompt with the retrieved context
+        const user = users[from] || { name: 'user', role: 'a valued user' };
+        let historyContext = "Here is some relevant context from our past conversation:\n";
+        if (relevantHistory.length > 0) {
+            relevantHistory.forEach(row => {
+                historyContext += `User said: "${row.user_message}" and I replied: "${row.ai_message}"\n`;
+            });
+        } else {
+            historyContext = "We have no relevant conversation history on this topic yet.";
+        }
+        
+        const systemPrompt = `You are a helpful AI assistant talking to ${user.name} (${user.role}). Use the provided conversation history to answer their new question accurately. Be friendly and address them by name.`;
+        const fullPrompt = `${historyContext}\n\nNew question from ${user.name}: "${userMessage}"`;
+        
+        const payload = {
+            contents: [{ parts: [{ text: fullPrompt }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+        };
+
+        // Step 3: Call Gemini to get an intelligent response
+        const response = await axios.post(GENERATE_CONTENT_URL, payload);
+        const aiResponse = response.data.candidates[0].content.parts[0].text.trim();
+        console.log(`AI Response: "${aiResponse}"`);
+
+        // Step 4: Send the response to the user
+        await sendWhatsAppMessage(from, aiResponse);
+
+        // Step 5: Save the new conversation turn to the database for future use
+        await saveToHistory(userMessage, aiResponse, from);
+
+    } catch (error) {
+        console.error("Error in processMessage:", error.message);
+        await sendWhatsAppMessage(from, "Sorry, I encountered an error processing your request. Please try again.");
+    }
+};
+
+
+// --- 7. Express Server Setup ---
 const app = express();
-app.use(express.json()); // Middleware to parse JSON bodies
+app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// --- Main Webhook Endpoint ---
+// Webhook endpoint for both verification and message handling
 app.all('/webhook', (req, res) => {
     if (req.method === 'GET') {
-        // --- Webhook Verification (GET Request) ---
-        // (This part is unchanged)
         const mode = req.query['hub.mode'];
         const token = req.query['hub.verify_token'];
         const challenge = req.query['hub.challenge'];
-        if (mode && token) {
-            if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-                console.log('Webhook verified successfully!');
-                res.status(200).send(challenge);
-            } else {
-                res.sendStatus(403);
-            }
+        if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+            res.status(200).send(challenge);
+            console.log('Webhook verified successfully!');
         } else {
-            res.sendStatus(400);
+            res.sendStatus(403);
         }
     } else if (req.method === 'POST') {
-        // --- Handle Incoming Messages (POST Request) ---
-        // (This part is unchanged)
-        console.log('Received incoming message.');
+        res.sendStatus(200); // Acknowledge immediately
         const body = req.body;
         if (body.object === 'whatsapp_business_account' && body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
             const messageData = body.entry[0].changes[0].value.messages[0];
             if (messageData.type === 'text') {
-                const from = messageData.from; // The sender's phone number
-                const msg_body = messageData.text.body;
-                console.log(`Message from ${from}: "${msg_body}"`);
-                processMessage(msg_body, from); // Pass the number to the processor
+                processMessage(messageData.text.body, messageData.from);
             }
         }
-        res.sendStatus(200);
     } else {
         res.sendStatus(405);
     }
 });
 
-
-/**
- * Generates a response using the Gemini AI and sends it back to the user.
- * @param {string} userMessage - The text message from the WhatsApp user.
- * @param {string} from - The user's phone number.
- */
-async function processMessage(userMessage, from) {
-    try {
-        console.log(`Getting AI response for: "${userMessage}" from user ${from}`);
-        // Pass the 'from' number to the AI function to get a personalized response
-        const aiResponse = await getGeminiResponse(userMessage, from);
-        
-        if (aiResponse) {
-            console.log(`AI Response: "${aiResponse}"`);
-            await sendWhatsAppMessage(from, aiResponse);
-        } else {
-            console.log("No response from AI.");
-        }
-    } catch (error) {
-        console.error("Error processing message:", error.message);
-        await sendWhatsAppMessage(from, "Sorry, I encountered an error. Please try again later.");
-    }
-}
-
-/**
- * Calls the Gemini API to get a text response, personalized for the user.
- * @param {string} prompt - The user's message to send to the AI.
- * @param {string} from - The user's phone number.
- * @returns {Promise<string|null>} - The AI-generated text or null on error.
- */
-async function getGeminiResponse(prompt, from) {
-    // --- THIS IS THE PERSONALIZATION LOGIC ---
-
-    // 1. Look up the user in our database
-    const user = users[from];
-    let personalizedPrompt;
-
-    // 2. Create a custom system prompt based on the user
-    if (user) {
-        // If the user is recognized
-        personalizedPrompt = `You are a helpful personalized AI assistant. Since you will be talking to multiple people you should know the constraints of talking to different people. There are currently 2 people whom you will be talking with, Admin and his very close friend. You are currently speaking with ${user.name}, who is ${user.role}. Address them by their name and be extra friendly.`;
-    } else {
-        // A generic prompt for unknown users
-        personalizedPrompt = "You are a friendly and helpful assistant. Keep your answers concise and clear.";
-    }
-    
-    console.log("Using System Prompt:", personalizedPrompt);
-
-    const payload = {
-        contents: [{
-            parts: [{
-                text: prompt
-            }]
-        }],
-        systemInstruction: {
-            parts: [{
-                text: personalizedPrompt // Use the personalized prompt here!
-            }]
-        },
-    };
-
-    try {
-        const response = await axios.post(GEMINI_API_URL, payload);
-        const text = response.data.candidates[0].content.parts[0].text;
-        return text.trim();
-    } catch (error) {
-        console.error("Error fetching Gemini response:", error.response ? error.response.data : error.message);
-        return "I'm having trouble thinking right now.";
-    }
-}
-
-/**
- * Sends a text message to a user via the WhatsApp Business API.
- * @param {string} to - The recipient's phone number.
- * @param {string} text - The message to send.
- */
-async function sendWhatsAppMessage(to, text) {
-    // (This function is unchanged)
-    const payload = {
-        messaging_product: 'whatsapp',
-        to: to,
-        type: 'text',
-        text: {
-            body: text
-        },
-    };
-
-    const headers = {
-        'Authorization': `Bearer ${WHATSAPP_TOKEN}`,
-        'Content-Type': 'application/json',
-    };
-
-    try {
-        console.log(`Sending message to ${to}: "${text}"`);
-        await axios.post(WHATSAPP_API_URL, payload, { headers });
-        console.log('Message sent successfully!');
-    } catch (error) {
-        console.error('Error sending WhatsApp message:', error.response ? error.response.data : error.message);
-    }
-}
-
-// Default route for health check
+// Health check route
 app.get('/', (req, res) => {
-    res.send('WhatsApp AI Agent is running!');
+    res.status(200).send('WhatsApp RAG Agent is running!');
 });
 
-// Start the server
-app.listen(PORT, () => {
-    console.log(`Server is listening on port ${PORT}`);
+// Start the server after initializing the database
+initializeDatabase().then(() => {
+    app.listen(PORT, () => {
+        console.log(`Server is listening on port ${PORT}`);
+    });
 });
 
