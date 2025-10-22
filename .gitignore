@@ -1,3 +1,4 @@
 .env
 node_modules/
 send_wp_msg.js
+test.js
