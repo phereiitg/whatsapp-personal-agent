@@ -98,17 +98,20 @@ const getEmbedding = async (text) => {
  * @returns {Promise<object[]>} - An array of past message objects.
  */
 const getRelevantHistory = async (userMessage, from) => {
-    const embedding = await getEmbedding(userMessage);
-    const embeddingSql = pgvector.toSql(embedding);
+  const embedding = await getEmbedding(userMessage);
+  const embeddingSql = pgvector.toSql(embedding);
 
-    const { rows } = await pool.query(
-        `SELECT user_name, user_message, ai_message FROM chat_history 
-         ORDER BY embedding <-> $2 
-         LIMIT 3`, // Retrieve the top 3 most similar past messages
-        [from, embeddingSql]
-    );
-    console.log(`Found ${rows.length} relevant past messages.`);
-    return rows;
+  const { rows } = await pool.query(
+    `SELECT user_name, user_message, ai_message
+     FROM chat_history
+     WHERE user_phone = $1
+     ORDER BY embedding <-> $2
+     LIMIT 3`,
+    [from, embeddingSql]
+  );
+  
+  console.log(`Found ${rows.length} relevant past messages for ${from}.`);
+  return rows;
 };
 
 /**
