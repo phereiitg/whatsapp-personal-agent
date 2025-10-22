@@ -193,6 +193,7 @@ const processMessage = async (userMessage, from) => {
 
     } catch (error) {
         console.error("Error in processMessage:", error.message);
+        console.log("Error:", error);
         await sendWhatsAppMessage(from, "Sorry, I encountered an error processing your request. Please try again.");
     }
 };
