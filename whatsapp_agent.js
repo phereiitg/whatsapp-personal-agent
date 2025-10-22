@@ -52,6 +52,7 @@ const initializeDatabase = async (retries = 5) => {
         CREATE TABLE IF NOT EXISTS chat_history (
           id SERIAL PRIMARY KEY,
           user_phone TEXT NOT NULL,
+          user_name TEXT NOT NULL,
           user_message TEXT,
           ai_message TEXT,
           embedding VECTOR(768),
@@ -97,18 +98,20 @@ const getEmbedding = async (text) => {
  * @returns {Promise<object[]>} - An array of past message objects.
  */
 const getRelevantHistory = async (userMessage, from) => {
-    const embedding = await getEmbedding(userMessage);
-    const embeddingSql = pgvector.toSql(embedding);
+  const embedding = await getEmbedding(userMessage);
+  const embeddingSql = pgvector.toSql(embedding);
 
-    const { rows } = await pool.query(
-        `SELECT user_message, ai_message FROM chat_history 
-         WHERE user_phone = $1 
-         ORDER BY embedding <-> $2 
-         LIMIT 3`, // Retrieve the top 3 most similar past messages
-        [from, embeddingSql]
-    );
-    console.log(`Found ${rows.length} relevant past messages.`);
-    return rows;
+  const { rows } = await pool.query(
+    `SELECT user_name, user_message, ai_message
+     FROM chat_history
+     WHERE user_phone = $1
+     ORDER BY embedding <-> $2
+     LIMIT 3`,
+    [from, embeddingSql]
+  );
+  
+  console.log(`Found ${rows.length} relevant past messages for ${from}.`);
+  return rows;
 };
 
 /**
@@ -118,13 +121,14 @@ const getRelevantHistory = async (userMessage, from) => {
  * @param {string} from - The user's phone number.
  */
 const saveToHistory = async (userMessage, aiMessage, from) => {
-    const textToEmbed = `User said: ${userMessage}\nAI replied: ${aiMessage}`;
+    const userName = users[from] ? users[from].name : 'Unknown User';
+    const textToEmbed = `${userName} said: ${userMessage}\nAI replied: ${aiMessage}`;
     const embedding = await getEmbedding(textToEmbed);
     const embeddingSql = pgvector.toSql(embedding);
 
     await pool.query(
-        'INSERT INTO chat_history (user_phone, user_message, ai_message, embedding) VALUES ($1, $2, $3, $4)',
-        [from, userMessage, aiMessage, embeddingSql]
+        'INSERT INTO chat_history (user_phone, user_name, user_message, ai_message, embedding) VALUES ($1, $2, $3, $4, $5)',
+        [from, userName, userMessage, aiMessage, embeddingSql]
     );
     console.log(`Saved new exchange for user ${from} to history.`);
 };
@@ -166,13 +170,13 @@ const processMessage = async (userMessage, from) => {
         let historyContext = "Here is some relevant context from our past conversation:\n";
         if (relevantHistory.length > 0) {
             relevantHistory.forEach(row => {
-                historyContext += `User said: "${row.user_message}" and I replied: "${row.ai_message}"\n`;
+                historyContext += `${row.user_name} said: "${row.user_message}" and I replied: "${row.ai_message}"\n`;
             });
         } else {
             historyContext = "We have no relevant conversation history on this topic yet.";
         }
-        
-        const systemPrompt = `You are a helpful personalized AI assistant of Prakhar and Radhika, talking to ${user.name}).The context between Prakhar and Radhika is as folllows: ${users_bg}, use this context only when necessary or any of the user asks about it, otherwise dont use this information unnecessory for example to frame suggestions. Use the provided conversation history to answer their new question accurately. Be friendly and address them by name.`;
+
+        const systemPrompt = `You are a helpful personalized AI assistant of Prakhar and Radhika, talking to ${user.name}).The context between Prakhar and Radhika is as folllows: ${users_bg}, use this context only when necessary or any of the user asks about it, otherwise dont use this information unnecessory for example to frame suggestions. Use the provided conversation history to answer their new question accurately. Use the inter user history that means the history of the person you are not talking to, only when specifically asked. Be friendly and address them by name.`;
         const fullPrompt = `${historyContext}\n\nNew question from ${user.name}: "${userMessage}"`;
         
         const payload = {
