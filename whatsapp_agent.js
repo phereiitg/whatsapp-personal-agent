@@ -52,6 +52,7 @@ const initializeDatabase = async (retries = 5) => {
         CREATE TABLE IF NOT EXISTS chat_history (
           id SERIAL PRIMARY KEY,
           user_phone TEXT NOT NULL,
+          user_name TEXT NOT NULL,
           user_message TEXT,
           ai_message TEXT,
           embedding VECTOR(768),
@@ -118,13 +119,14 @@ const getRelevantHistory = async (userMessage, from) => {
  * @param {string} from - The user's phone number.
  */
 const saveToHistory = async (userMessage, aiMessage, from) => {
+    const user = users[from] || { name: "Unknown" };
     const textToEmbed = `User said: ${userMessage}\nAI replied: ${aiMessage}`;
     const embedding = await getEmbedding(textToEmbed);
     const embeddingSql = pgvector.toSql(embedding);
 
     await pool.query(
-        'INSERT INTO chat_history (user_phone, user_message, ai_message, embedding) VALUES ($1, $2, $3, $4)',
-        [from, userMessage, aiMessage, embeddingSql]
+        `INSERT INTO chat_history (user_phone, user_name, user_message, ai_message, embedding) VALUES ($1, $2, $3, $4, $5)`,
+        [from, user.name, userMessage, aiMessage, embeddingSql]
     );
     console.log(`Saved new exchange for user ${from} to history.`);
 };
