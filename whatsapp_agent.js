@@ -35,8 +35,8 @@ const users_bg = "Prakhar is your the Creator/admin who has a very close friend 
 const pool = new Pool({
   connectionString: DATABASE_URL,
   ssl: { rejectUnauthorized: false },
-  idleTimeoutMillis: 10000,
-  connectionTimeoutMillis: 10000
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 30000
 });
 
 const initializeDatabase = async (retries = 5) => {
