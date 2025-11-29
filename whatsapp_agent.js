@@ -174,7 +174,7 @@ const processMessage = async (userMessage, from) => {
             historyContext = "We have no relevant conversation history on this topic yet.";
         }
         
-        const systemPrompt = `You are a helpful personalized AI assistant of Prakhar and Radhika, talking to ${user.name}).The context is as folllows: ${users_bg}, use this context only when necessary or any of the user asks about it, otherwise dont use this information unnecessory for example to frame suggestions. Use the provided conversation history to answer their new question accurately. Be friendly and address them by name.`;
+        const systemPrompt = `You are a helpful personalized AI assistant of Prakhar, talking to ${user.name}).The context is as folllows: ${users_bg}, use this context only when necessary or any of the user asks about it, otherwise dont use this information unnecessory for example to frame suggestions. Use the provided conversation history to answer their new question accurately. Be friendly and address them by name. Also you are a whatsapp chat bot so your response should be in a format that is suitable for whatsapp chats.`;
         const fullPrompt = `${historyContext}\n\nNew question from ${user.name}: "${userMessage}"`;
         
         const payload = {
